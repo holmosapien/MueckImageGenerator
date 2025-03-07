@@ -27,11 +27,7 @@ class TensorArtJob: Identifiable {
 @Observable
 class TensorArtCheckpoint: Identifiable {
     let id: UUID = UUID()
-    
-    var modelInput: String = ""
-    
     var modelId: String = "834401335727231078"
-    var name: String?
 }
 
 @Observable
@@ -42,11 +38,6 @@ class TensorArtLoraList {
 @Observable
 class TensorArtLora: Identifiable {
     let id: UUID = UUID()
-    
-    var modelInput: String = ""
-    var weightInput: String = ""
-    
     var modelId: String = ""
-    var name: String?
     var weight: Double = 1.0
 }

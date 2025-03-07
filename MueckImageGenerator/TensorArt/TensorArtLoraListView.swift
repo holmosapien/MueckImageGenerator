@@ -11,12 +11,21 @@ struct TensorArtLoraListView: View {
     @Bindable var viewModel: ViewModel
 
     var body: some View {
-        Section(header: Text("LoRAs")) {
-            ForEach(self.viewModel.loras.items) { lora in
-                TensorArtLoraListItemView(viewModel: TensorArtLoraListItemView.ViewModel(lora: lora))
+        VStack(alignment: .leading) {
+            ForEach(viewModel.loras.items) { lora in
+                HStack {
+                    if let loraItemViewModel = viewModel.loraListViewModelMap[lora.id] {
+                        TensorArtLoraListItemView(viewModel: loraItemViewModel)
+
+                        Button(action: { viewModel.removeLora(lora: lora) }) {
+                            Image(systemName: "minus.circle")
+                                .foregroundColor(.red)
+                        }
+                    }
+                }
             }
-            Button("Add Lora") {
-                self.viewModel.addLora()
+            Button(action: viewModel.addLora) {
+                Label("Add LoRA", systemImage: "plus.circle")
             }
         }
     }
@@ -24,30 +33,17 @@ struct TensorArtLoraListView: View {
 
 struct TensorArtLoraListItemView: View {
     @Bindable var viewModel: ViewModel
+
     @Environment(TensorArtSettings.self) private var settings
-    
+
     var body: some View {
-        HStack {
-            if (viewModel.lora.name == nil) {
-                TextField("Model ID", text: $viewModel.lora.modelInput)
-                TextField("Weight", text: $viewModel.lora.weightInput)
-                
-                Button(action: {
-                    Task {
-                        await viewModel.processInput(settings: settings)
-                    }
-                }) {
-                    HStack {
-                        Text("Save LoRA")
-                    }
-                }
-            } else {
-                let loraName: String = viewModel.lora.name ?? "Unknown"
-                let loraWeight: String = String(viewModel.lora.weight)
-                
-                Text(loraName)
-                Text(loraWeight)
+        TensorArtModelPickerView(viewModel: viewModel.loraItemViewModel)
+
+        TextField("Weight", text: $viewModel.weight)
+            .labelsHidden()
+            .containerRelativeFrame(.horizontal, count: 100, span: 20, spacing: 0)
+            .onChange(of: viewModel.weight) { oldValue, newValue in
+                viewModel.updateWeight()
             }
-        }
     }
 }
