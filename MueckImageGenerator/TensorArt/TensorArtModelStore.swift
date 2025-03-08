@@ -16,11 +16,13 @@ class TensorArtModelDefinition: Codable, Identifiable {
     let modelId: String
     let name: String
     let modelType: ModelType
+    let hidden: Bool
 
     init(modelId: String, name: String, modelType: ModelType) {
         self.modelId = modelId
         self.name = name
         self.modelType = modelType
+        self.hidden = false
     }
 }
 

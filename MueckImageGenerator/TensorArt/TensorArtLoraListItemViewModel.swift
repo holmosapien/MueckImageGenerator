@@ -17,6 +17,8 @@ extension TensorArtLoraListItemView {
         var loraItemViewModel: TensorArtModelPickerView.ViewModel
 
         init(store: TensorArtModelStore, lora: TensorArtLora) {
+            print("Initializing LoRA list item view model with LoRA: \(lora)")
+
             self.store = store
             self.lora = lora
 

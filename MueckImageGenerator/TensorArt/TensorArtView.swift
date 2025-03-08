@@ -8,45 +8,50 @@
 import SwiftUI
 
 struct TensorArtView: View {
-    @State private var viewModel = ViewModel()
+    @Bindable var viewModel: ViewModel
 
-    @State private var selectedImage: String? // The generated image
-    @State private var showDrawer = false // Controls the right-side drawer
+    @State private var currentImageIndex: Int = 0
+
     @State private var selectedFavorite: String? // Selected favorite
     @State private var formParameters = TensorArtJob() // Current form parameters
     @State private var favorites: [String: TensorArtJob] = [:] // Stored favorite parameter sets
-    @State private var generatedImages: [String] = [] // List of previously generated images
 
-    @Environment(TensorArtSettings.self) private var settings
+    @State private var showDrawer = false // Controls the right-side drawer
+    @State private var generatedImages: [String] = [] // Generated images
 
     var body: some View {
-        @Bindable var settings = settings
-
         HStack {
             VStack {
                 ZStack {
-                    if let selectedImage = selectedImage {
-                        Image(systemName: selectedImage)
-                            .resizable()
-                            .scaledToFit()
-                            .frame(height: 300)
+                    if (viewModel.generatedImages.count == 0) {
+                        Text("No Image Generated")
+                            .frame(width: 600, height: 600)
                             .border(Color.gray, width: 1)
                     } else {
-                        Text("No Image Generated")
-                            .frame(height: 300)
-                            .border(Color.gray, width: 1)
+                        TabView(selection: $currentImageIndex) {
+                            ForEach(viewModel.generatedImages.indices, id: \.self) { index in
+                                Image(nsImage: viewModel.generatedImages[index].nsImage)
+                                    .resizable()
+                                    .frame(width: 600, height: 600)
+                                    .tag(index)
+                                    .tabItem {
+                                        Text("Image \(index + 1)")
+                                    }
+                            }
+                        }
+                        .tabViewStyle(.automatic)
                     }
                 }
                 .padding()
 
                 Form {
                     LabeledContent("Base URL") {
-                        TextField("Base URL", text: $settings.baseUrl)
+                        TextField("Base URL", text: $viewModel.tensorArtSettings.baseUrl)
                             .labelsHidden()
                     }
 
                     LabeledContent("Bearer Token") {
-                        SecureField("Bearer Token", text: $settings.bearerToken)
+                        SecureField("Bearer Token", text: $viewModel.tensorArtSettings.bearerToken)
                             .labelsHidden()
                     }
 
@@ -85,17 +90,50 @@ struct TensorArtView: View {
                             .scrollDisabled(true)
                     }
 
-                    Button(action: { viewModel.run(settings: settings) }) {
+                    LabeledContent("") {
                         HStack {
-                            Image(systemName: "plus")
-                            Text("Start Job")
+                            Button(action: {
+                                Task {
+                                    await viewModel.run()
+                                }
+                            }) {
+                                HStack {
+                                    Image(systemName: "plus")
+                                    Text("Start Job")
+                                }
+                            }
+                            .disabled(!viewModel.canStartJob)
+
+                            if (viewModel.generatedImages.count > 0) {
+                                Button(action: {
+                                    Task {
+                                        try await viewModel.saveGeneratedImages()
+                                    }
+                                }) {
+                                    Text("Save Images")
+                                }
+                            }
+
+                            Text("Show Hidden Models: \(viewModel.globalSettings.showHiddenModels)")
                         }
                     }
                 }
                 .padding()
                 .onAppear {
                     Task {
-                        try await viewModel.modelStore.load()
+                        print("Loading ...")
+
+                        do {
+                            try await viewModel.modelStore.load()
+                        } catch {
+                            print("Error loading models: \(error)")
+                        }
+
+                        do {
+                            try await viewModel.generatedImageStore.load()
+                        } catch {
+                            print("Error loading generated images: \(error)")
+                        }
                     }
                 }
             }

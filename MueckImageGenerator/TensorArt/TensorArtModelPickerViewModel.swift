@@ -11,14 +11,14 @@ let NO_MODEL_UUID = "F1140F6E-DEF1-4054-8FF6-F219BDB25DB4"
 let NEW_MODEL_UUID = "D9ECBF86-D891-48CA-91FD-83C0233A7672"
 
 struct ModelResponse: Codable {
-    var model: ModelDetails
-}
+    struct ModelDetails: Codable {
+        var id: String
+        var name: String
+        var modelType: String
+        var projectName: String
+    }
 
-struct ModelDetails: Codable {
-    var id: String
-    var name: String
-    var modelType: String
-    var projectName: String
+    var model: ModelDetails
 }
 
 extension TensorArtModelPickerView {
@@ -47,7 +47,7 @@ extension TensorArtModelPickerView {
         }
 
         init(store: TensorArtModelStore, lora: TensorArtLora) {
-            print("Initializing lora picker: \(store.models)")
+            print("Initializing LoRA picker: \(store.models)")
 
             self.store = store
             self.modelType = ModelType.LORA
@@ -86,6 +86,65 @@ extension TensorArtModelPickerView {
                     print("Error fetching model: \(error)")
                 }
             }
+        }
+
+        private func parseTensorArtModel(_ input: String) -> String? {
+
+            //
+            // The input can either be:
+            //
+            // 1. A model ID (string of integers)
+            // 2. A URL in the format https://tensor.art/models/757279507095956705(\/.+)?$
+            //
+            // In either case we want to use a regular expression to extract the model ID.
+            //
+
+            let modelId: String
+
+            let modelIdPattern = #"^\d+$"#
+            let urlPattern = #"^https://tensor.art/models/(\d+)(\/.+)?$"#
+
+            let modelIdRegex = try! NSRegularExpression(pattern: modelIdPattern, options: [])
+            let urlRegex = try! NSRegularExpression(pattern: urlPattern, options: [])
+
+            if modelIdRegex.firstMatch(in: input, options: [], range: NSRange(location: 0, length: input.count)) != nil {
+                modelId = input
+            } else if let match = urlRegex.firstMatch(in: input, options: [], range: NSRange(location: 0, length: input.count)) {
+                let range = match.range(at: 1)
+
+                modelId = (input as NSString).substring(with: range)
+            } else {
+                return nil
+            }
+
+            return modelId
+        }
+
+        private func fetchTensorArtModel(settings: TensorArtSettings, modelId: String, modelType: ModelType) async throws -> ModelResponse? {
+            guard let url = URL(string: "\(settings.baseUrl)/v1/models/\(modelId)") else {
+                return nil
+            }
+
+            print("Fetching model from \(url)")
+
+            var request = URLRequest(url: url)
+
+            request.httpMethod = "GET"
+            request.setValue("Bearer \(settings.bearerToken)", forHTTPHeaderField: "Authorization")
+
+            let (data, response) = try await URLSession.shared.data(for: request)
+
+            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                throw URLError(.badServerResponse) // 🚨 Handle non-200 responses
+            }
+
+            let modelResponse = try JSONDecoder().decode(ModelResponse.self, from: data)
+
+            if modelResponse.model.modelType != modelType.rawValue {
+                return nil
+            }
+
+            return modelResponse
         }
 
         func updateJobModel(modelId: String) {
