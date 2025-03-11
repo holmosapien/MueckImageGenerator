@@ -100,7 +100,7 @@ class GeneratedImageStore {
         jobId: String,
         modelId: String,
         prompt: String,
-        images: [JobImage]
+        images: [GeneratedImage]
     ) async throws {
         for image in images {
             if let localUrl = image.localUrl {
@@ -113,7 +113,7 @@ class GeneratedImageStore {
                     loraIds: [],
                     prompt: prompt,
                     seed: image.seed,
-                    imageUrl: image.imageUrl.absoluteString,
+                    imageUrl: image.url.absoluteString,
                     localPath: localPath
                 )
 

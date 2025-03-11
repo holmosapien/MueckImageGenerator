@@ -7,157 +7,57 @@
 
 import SwiftUI
 
-struct JobRequest: Encodable {
-    struct AnyJobStage: Encodable {
-        private let encodeClosure: (Encoder) throws -> Void
-
-        init<T: Encodable>(_ value: T) {
-            encodeClosure = { encoder in
-                try value.encode(to: encoder)
-            }
-        }
-
-        func encode(to encoder: Encoder) throws {
-            try encodeClosure(encoder)
-        }
-    }
-
-    protocol JobStage: Encodable {}
-
-    struct InputInitializationStageRequest: JobStage {
-        var type: String = "INPUT_INITIALIZE"
-        var inputInitialize: InputInitializationStageDetails
-    }
-
-    struct InputInitializationStageDetails: Encodable {
-        var count: Int
-        var seed: Int
-    }
-
-    struct DiffusionStageRequest: Encodable {
-        var type: String = "DIFFUSION"
-        var diffusion: DiffusionStageDetails
-    }
-
-    struct DiffusionStageDetails: Encodable {
-        var cfgScale: Int
-        var clipSkip: Int
-        var guidance: Double
-        var height: Int
-        var prompts: [TensorArtJobPrompt]
-        var sampler: String
-        var sdVae: String
-        var sdModel: String
-        var steps: Int
-        var width: Int
-
-        enum CodingKeys: String, CodingKey {
-            case cfgScale = "cfgScale"
-            case clipSkip = "clipSkip"
-            case guidance = "guidance"
-            case height = "height"
-            case prompts = "prompts"
-            case sampler = "sampler"
-            case sdVae = "sdVae"
-            case sdModel = "sd_model"
-            case steps = "steps"
-            case width = "width"
-        }
-    }
-
-    struct TensorArtJobPrompt: Encodable {
-        var text: String
-    }
-
-    var requestId: UUID
-    var stages: [AnyJobStage]
-
-    enum CodingKeys: String, CodingKey {
-        case requestId = "request_id"
-        case stages = "stages"
-    }
+@Observable
+class TensorArtJobConfig: Identifiable {
+    let id: UUID = UUID()
+    var jobId: String?
+    var checkpoint: TensorArtCheckpoint = TensorArtCheckpoint()
+    var loras: TensorArtLoraList = TensorArtLoraList()
+    var sampler: String = "Euler a"
+    var prompt: String = ""
+    var width: Int = 1024
+    var height: Int = 1152
+    var seed: Int = -1
+    var steps: Int = 20
+    var configScale: Int = 5
+    var clipSkip: Int = 1
+    var guidance: Double = 3.5
 }
 
-struct JobResponse: Codable {
-    struct JobDetails: Codable {
-        enum JobStatus: String, Codable {
-            case CREATED = "CREATED"
-            case WAITING = "WAITING"
-            case RUNNING = "RUNNING"
-            case SUCCESS = "SUCCESS"
-        }
-
-        struct JobWaitingInfo: Codable {
-            var queuePosition: String?
-            var queueLength: String?
-
-            enum CodingKeys: String, CodingKey {
-                case queuePosition = "queueRank"
-                case queueLength = "queueLen"
-            }
-        }
-
-        struct JobSuccessInfo: Codable {
-            var images: [JobImageDetails]
-            var imageExifMetaMap: [String: JobImageMetadata]
-        }
-
-        struct JobImageDetails: Codable {
-            var id: String
-            var url: String
-        }
-
-        struct JobImageMetadata: Codable {
-            var meta: JobImageMetadataDetails
-        }
-
-        struct JobImageMetadataDetails: Codable {
-            var fileSize: String
-            var imageSize: String
-            var mimeType: String
-            var seed: String
-
-            enum CodingKeys: String, CodingKey {
-                case fileSize = "FileSize"
-                case imageSize = "ImageSize"
-                case mimeType = "MIMEType"
-                case seed = "Seed"
-            }
-        }
-
-        var id: String
-        var status: JobStatus
-        var credits: Decimal?
-        var waitingInfo: JobWaitingInfo?
-        var successInfo: JobSuccessInfo?
-    }
-
-    var job: JobDetails
+@Observable
+class TensorArtCheckpoint: Identifiable {
+    let id: UUID = UUID()
+    var modelId: String = "834401335727231078"
 }
 
-enum JobStatus: String {
-    case none = "none"
-    case created = "created"
-    case queued = "queued"
-    case running = "running"
-    case complete = "complete"
-    case failed = "failed"
+@Observable
+class TensorArtLoraList {
+    var items: [TensorArtLora] = []
 }
 
-class JobImage {
+@Observable
+class TensorArtLora: Identifiable {
+    let id: UUID = UUID()
+    var modelId: String = ""
+    var weight: Double = 1.0
+}
+
+@Observable
+class GeneratedImage: Identifiable {
+    let id: UUID = UUID()
     var imageId: String
     var seed: String
+    var url: URL
     var rawImage: Data
     var nsImage: NSImage
-    var imageUrl: URL
     var localUrl: URL?
 
-    init(imageId: String, seed: String, rawImage: Data, nsImage: NSImage, imageUrl: URL) {
+    init(imageId: String, seed: String, url: URL, rawImage: Data, nsImage: NSImage) {
         self.imageId = imageId
         self.seed = seed
+        self.url = url
         self.rawImage = rawImage
         self.nsImage = nsImage
-        self.imageUrl = imageUrl
     }
 }
 
@@ -167,145 +67,70 @@ extension TensorArtView {
         var globalSettings: GlobalSettings
         var tensorArtSettings: TensorArtSettings
 
-        var job: TensorArtJob
         var modelStore: TensorArtModelStore
         var generatedImageStore: GeneratedImageStore
+
+        var jobConfig: TensorArtJobConfig
+        var job: TensorArtJob?
 
         var checkpointViewModel: TensorArtModelPickerView.ViewModel
         var loraListViewModel: TensorArtLoraListView.ViewModel
 
         var showHiddenModels = false
 
-        var jobStatus: JobStatus = .none
-
         private var pollingTask: Task<Void, Never>?
-        var isPolling = false
+        private var isPolling = false
 
         var canStartJob: Bool {
-            if isPolling || job.checkpoint.modelId.isEmpty || job.prompt.isEmpty {
-                return false
-            }
-
             return true
         }
 
-        var generatedImages: [JobImage] = []
+        var generatedImages: [GeneratedImage] = []
 
         init(
             globalSettings: GlobalSettings,
             tensorArtSettings: TensorArtSettings,
-            job: TensorArtJob = TensorArtJob(),
             modelStore: TensorArtModelStore = TensorArtModelStore(),
-            generatedImageStore: GeneratedImageStore = GeneratedImageStore()
+            generatedImageStore: GeneratedImageStore = GeneratedImageStore(),
+            jobConfig: TensorArtJobConfig = TensorArtJobConfig()
         ) {
             print("Initializing TensorArt view model")
 
             self.globalSettings = globalSettings
             self.tensorArtSettings = tensorArtSettings
 
-            self.job = job
             self.modelStore = modelStore
             self.generatedImageStore = generatedImageStore
 
-            self.checkpointViewModel = TensorArtModelPickerView.ViewModel(store: modelStore, checkpoint: job.checkpoint)
-            self.loraListViewModel = TensorArtLoraListView.ViewModel(store: modelStore, loras: job.loras)
+            self.jobConfig = jobConfig
+
+            self.checkpointViewModel = TensorArtModelPickerView.ViewModel(store: modelStore, checkpoint: jobConfig.checkpoint)
+            self.loraListViewModel = TensorArtLoraListView.ViewModel(store: modelStore, loras: jobConfig.loras)
         }
 
         func run() async {
-            generatedImages = []
-            jobStatus = .created
+            generatedImages.removeAll()
 
             do {
-                if let jobId = try await startJob() {
-                    job.jobId = jobId
+                let job = TensorArtJob(globalSettings: globalSettings, tensorArtSettings: tensorArtSettings)
 
-                    pollJob(jobId: jobId)
-                } else {
-                    jobStatus = .failed
+                guard let jobId = try await job.start(jobConfig: jobConfig) else {
+                    print("Failed to start job")
+
+                    return
                 }
+
+                self.job = job
+
+                pollJob(jobId: jobId)
             } catch {
                 print("Error starting job: \(error)")
 
-                jobStatus = .failed
+                return
             }
         }
 
-        private func startJob() async throws -> String? {
-            let tensorArtJob = JobRequest(
-                requestId: UUID(),
-                stages: [
-                    JobRequest.AnyJobStage(JobRequest.InputInitializationStageRequest(
-                        inputInitialize: JobRequest.InputInitializationStageDetails(
-                            count: 1,
-                            seed: -1
-                        )
-                    )),
-                    JobRequest.AnyJobStage(JobRequest.DiffusionStageRequest(
-                        diffusion: JobRequest.DiffusionStageDetails(
-                            cfgScale: job.configScale,
-                            clipSkip: job.clipSkip,
-                            guidance: job.guidance,
-                            height: job.height,
-                            prompts: [JobRequest.TensorArtJobPrompt(text: job.prompt)],
-                            sampler: job.sampler,
-                            sdVae: "Automatic",
-                            sdModel: job.checkpoint.modelId,
-                            steps: job.steps,
-                            width: job.width
-                        )
-                    ))
-                ]
-            )
-
-            guard let url = URL(string: "\(tensorArtSettings.baseUrl)/v1/jobs") else {
-                print("Invalid URL")
-
-                return nil
-            }
-
-            print("URL: \(url)")
-
-            var request = URLRequest(url: url)
-
-            request.httpMethod = "POST"
-
-            let encoder = JSONEncoder()
-
-            request.setValue("Bearer \(tensorArtSettings.bearerToken)", forHTTPHeaderField: "Authorization")
-            request.httpBody = try encoder.encode(tensorArtJob)
-
-            do {
-                let encodedRequestBody = try encoder.encode(tensorArtJob)
-
-                print("Encoded request body: \(String(data: encodedRequestBody, encoding: .utf8)!)")
-            } catch {
-                print("Error encoding request body: \(error)")
-            }
-
-            var jobResponse: JobResponse
-
-            do {
-                let (data, response) = try await URLSession.shared.data(for: request)
-
-                guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                    throw URLError(.badServerResponse)
-                }
-
-                jobResponse = try JSONDecoder().decode(JobResponse.self, from: data)
-            } catch {
-                print("Error starting job: \(error)")
-
-                throw error
-            }
-
-            print("Started job with ID \(jobResponse.job.id)")
-
-            job.jobId = jobResponse.job.id
-
-            return jobResponse.job.id
-        }
-
-        private func pollJob(jobId: String) {
+        func pollJob(jobId: String) {
             guard !isPolling else { return }
 
             isPolling = true
@@ -315,17 +140,24 @@ extension TensorArtView {
                     print("Polling job status for job ID \(jobId)")
 
                     do {
-                        let jobResponse = try await getJob(jobId: jobId)
-                        let status = getJobStatus(jobResponse: jobResponse)
+                        guard let job = self.job else {
+                            print("No job to poll")
 
-                        print("Job status: \(status)")
-
-                        jobStatus = status
-
-                        if status == .complete || status == .failed {
                             isPolling = false
 
-                            fetchImages(jobResponse: jobResponse)
+                            return
+                        }
+
+                        let jobSummary = try await job.getJob()
+
+                        print("Job status: \(jobSummary.status)")
+
+                        if jobSummary.status == .complete || jobSummary.status == .failed {
+                            if jobSummary.status == .complete {
+                                try await fetchImages(jobSummary: jobSummary)
+                            }
+
+                            isPolling = false
 
                             break
                         }
@@ -335,108 +167,56 @@ extension TensorArtView {
                         print("Error polling job status: \(error)")
 
                         isPolling = false
-
-                        self.jobStatus = .failed
                     }
                 }
             }
         }
 
-        private func getJob(jobId: String) async throws -> JobResponse {
-            guard let url = URL(string: "\(tensorArtSettings.baseUrl)/v1/jobs/\(jobId)") else {
-                throw URLError(.badURL)
-            }
-
-            var request = URLRequest(url: url)
-
-            request.httpMethod = "GET"
-            request.setValue("Bearer \(tensorArtSettings.bearerToken)", forHTTPHeaderField: "Authorization")
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                throw URLError(.badServerResponse)
-            }
-
-            let jobResponse = try JSONDecoder().decode(JobResponse.self, from: data)
-
-            return jobResponse
-        }
-
-        private func getJobStatus(jobId: String) async throws -> JobStatus {
-            let job = try await getJob(jobId: jobId)
-
-            return getJobStatus(jobResponse: job)
-        }
-
-        private func getJobStatus(jobResponse: JobResponse) -> JobStatus {
-            switch jobResponse.job.status {
-            case JobResponse.JobDetails.JobStatus.CREATED:
-                return .created
-            case JobResponse.JobDetails.JobStatus.WAITING:
-                return .queued
-            case JobResponse.JobDetails.JobStatus.RUNNING:
-                return .running
-            case JobResponse.JobDetails.JobStatus.SUCCESS:
-                return .complete
-            }
-        }
-
-        private func fetchImages(jobResponse: JobResponse) {
-            guard let successInfo = jobResponse.job.successInfo else {
-                return
-            }
-
-            for image in successInfo.images {
-                guard let url = URL(string: image.url) else {
-                    print("Invalid image URL")
-
-                    continue
-                }
-
-                var request = URLRequest(url: url)
+        func fetchImages(jobSummary: JobSummary) async throws {
+            for image in jobSummary.images {
+                var request = URLRequest(url: image.url)
 
                 request.httpMethod = "GET"
 
-                Task {
-                    do {
-                        let (data, response) = try await URLSession.shared.data(for: request)
+                do {
+                    let (data, response) = try await URLSession.shared.data(for: request)
 
-                        guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
-                            print("Error fetching image: \(response)")
+                    guard let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+                        print("Error fetching image: \(response)")
 
-                            return
-                        }
-
-                        guard let nsImage = NSImage(data: data) else {
-                            print("Failed to create NSImage")
-
-                            return
-                        }
-
-                        var seed: String = ""
-
-                        if let metadata = successInfo.imageExifMetaMap[image.id] {
-                            seed = metadata.meta.seed
-                        }
-
-                        let jobImage = JobImage(
-                            imageId: image.id,
-                            seed: seed,
-                            rawImage: data,
-                            nsImage: nsImage,
-                            imageUrl: url
-                        )
-
-                        generatedImages.append(jobImage)
-                    } catch {
-                        print("Error fetching image: \(error)")
+                        return
                     }
+
+                    guard let nsImage = NSImage(data: data) else {
+                        print("Failed to create NSImage")
+
+                        return
+                    }
+
+                    let generatedImage = GeneratedImage(
+                        imageId: image.imageId,
+                        seed: image.seed,
+                        url: image.url,
+                        rawImage: data,
+                        nsImage: nsImage
+                    )
+
+                    generatedImages.append(generatedImage)
+                } catch {
+                    print("Error fetching image: \(error)")
+
+                    return
                 }
             }
         }
 
         func saveGeneratedImages() async throws {
+            guard let job = job else {
+                print("No job to save images")
+
+                return
+            }
+
             var localImagePath: URL?
 
             // First see if we already have a bookmark saved.
@@ -519,7 +299,7 @@ extension TensorArtView {
                 }
             }
 
-            guard let jobId = job.jobId else {
+            guard let jobId = job.jobId, let modelId = job.modelId, let prompt = job.prompt else {
                 print("No job ID to save images")
 
                 return
@@ -527,8 +307,8 @@ extension TensorArtView {
 
             try await generatedImageStore.addGeneratedImages(
                 jobId: jobId,
-                modelId: job.checkpoint.modelId,
-                prompt: job.prompt,
+                modelId: modelId,
+                prompt: prompt,
                 images: generatedImages
             )
         }

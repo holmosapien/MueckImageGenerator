@@ -13,8 +13,8 @@ struct TensorArtView: View {
     @State private var currentImageIndex: Int = 0
 
     @State private var selectedFavorite: String? // Selected favorite
-    @State private var formParameters = TensorArtJob() // Current form parameters
-    @State private var favorites: [String: TensorArtJob] = [:] // Stored favorite parameter sets
+    @State private var formParameters = TensorArtJobConfig() // Current form parameters
+    @State private var favorites: [String: TensorArtJobConfig] = [:] // Stored favorite parameter sets
 
     @State private var showDrawer = false // Controls the right-side drawer
     @State private var generatedImages: [String] = [] // Generated images
@@ -29,13 +29,13 @@ struct TensorArtView: View {
                             .border(Color.gray, width: 1)
                     } else {
                         TabView(selection: $currentImageIndex) {
-                            ForEach(viewModel.generatedImages.indices, id: \.self) { index in
-                                Image(nsImage: viewModel.generatedImages[index].nsImage)
+                            ForEach(viewModel.generatedImages) { image in
+                                Image(nsImage: image.nsImage)
                                     .resizable()
                                     .frame(width: 600, height: 600)
-                                    .tag(index)
+                                    .tag(image.imageId)
                                     .tabItem {
-                                        Text("Image \(index + 1)")
+                                        Text("Image")
                                     }
                             }
                         }
@@ -86,8 +86,9 @@ struct TensorArtView: View {
                     Divider()
 
                     LabeledContent("Prompt") {
-                        TextEditor(text: $viewModel.job.prompt)
+                        TextEditor(text: $viewModel.jobConfig.prompt)
                             .scrollDisabled(true)
+                            .font(.system(size: 14))
                     }
 
                     LabeledContent("") {
@@ -113,8 +114,6 @@ struct TensorArtView: View {
                                     Text("Save Images")
                                 }
                             }
-
-                            Text("Show Hidden Models: \(viewModel.globalSettings.showHiddenModels)")
                         }
                     }
                 }
