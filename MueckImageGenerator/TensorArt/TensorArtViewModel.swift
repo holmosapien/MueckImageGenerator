@@ -15,8 +15,8 @@ class TensorArtJobConfig: Identifiable {
     var loras: TensorArtLoraList = TensorArtLoraList()
     var sampler: String = "Euler a"
     var prompt: String = ""
-    var width: Int = 1024
-    var height: Int = 1152
+    var width: CGFloat = 1024
+    var height: CGFloat = 1152
     var seed: Int = -1
     var steps: Int = 20
     var configScale: Int = 5
@@ -82,8 +82,25 @@ extension TensorArtView {
         private var isPolling = false
 
         var canStartJob: Bool {
+            if jobConfig.prompt.isEmpty {
+                return false
+            }
+
+            if let job = self.job {
+                if [.created, .pending, .queued, .running].contains(job.jobStatus) {
+                    return false
+                }
+            }
+
             return true
         }
+
+        var configWidth: CGFloat = 200
+        var contentWidth: CGFloat = 600
+        var contentHeight: CGFloat = 600
+        var historyWidth: CGFloat = 200
+
+        var previewDimensions: (width: CGFloat, height: CGFloat) = (width: 600, height: 600)
 
         var generatedImages: [GeneratedImage] = []
 
@@ -121,6 +138,7 @@ extension TensorArtView {
                 }
 
                 self.job = job
+                self.previewDimensions = calculatePreviewDimensions(width: jobConfig.width, height: jobConfig.height)
 
                 pollJob(jobId: jobId)
             } catch {
@@ -324,5 +342,29 @@ extension TensorArtView {
 
             return panel.runModal() == .OK ? panel.url : nil
         }
+
+        func updateWindowDimensions(width: CGFloat, height: CGFloat) {
+            configWidth = width * 0.2
+            historyWidth = width * 0.2
+            contentWidth = width - configWidth - historyWidth - 100
+            contentHeight = height
+
+            previewDimensions = calculatePreviewDimensions(width: contentWidth, height: contentHeight)
+        }
+
+        private func calculatePreviewDimensions(width: CGFloat, height: CGFloat) -> (width: CGFloat, height: CGFloat) {
+            let aspectRatio: CGFloat = width / height
+
+            var previewWidth: CGFloat = 600
+            var previewHeight = previewWidth / aspectRatio
+
+            if previewHeight > contentHeight {
+                previewHeight = contentHeight
+                previewWidth = previewHeight * aspectRatio
+            }
+
+            return (width: previewWidth, height: previewHeight)
+        }
+
     }
 }

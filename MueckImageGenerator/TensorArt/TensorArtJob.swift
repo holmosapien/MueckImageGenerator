@@ -82,9 +82,11 @@ struct TensorArtJobResponse: Codable {
     struct JobDetails: Codable {
         enum JobStatus: String, Codable {
             case CREATED = "CREATED"
+            case PENDING = "PENDING"
             case WAITING = "WAITING"
             case RUNNING = "RUNNING"
             case SUCCESS = "SUCCESS"
+            case FAILED = "FAILED"
         }
 
         struct JobWaitingInfo: Codable {
@@ -154,6 +156,7 @@ class JobSummary {
 enum JobStatus: String {
     case none = "none"
     case created = "created"
+    case pending = "pending"
     case queued = "queued"
     case running = "running"
     case complete = "complete"
@@ -177,6 +180,7 @@ enum TensorArtJobError: Error {
     case missingJobId
 }
 
+@Observable
 class TensorArtJob {
     private var globalSettings: GlobalSettings
     private var tensorArtSettings: TensorArtSettings
@@ -210,13 +214,13 @@ class TensorArtJob {
                         cfgScale: jobConfig.configScale,
                         clipSkip: jobConfig.clipSkip,
                         guidance: jobConfig.guidance,
-                        height: jobConfig.height,
+                        height: Int(jobConfig.height),
                         prompts: [TensorArtJobRequest.TensorArtJobPrompt(text: jobConfig.prompt)],
                         sampler: jobConfig.sampler,
                         sdVae: "Automatic",
                         sdModel: jobConfig.checkpoint.modelId,
                         steps: jobConfig.steps,
-                        width: jobConfig.width
+                        width: Int(jobConfig.width)
                     )
                 ))
             ]
@@ -289,6 +293,8 @@ class TensorArtJob {
         let status = parseJobStatus(jobResponse: rawJobResponse)
         let images = parseJobImages(jobResponse: rawJobResponse)
 
+        self.jobStatus = status
+
         let jobResponse = JobSummary(
             jobId: rawJobResponse.job.id,
             modelId: modelId ?? "",
@@ -304,12 +310,16 @@ class TensorArtJob {
         switch jobResponse.job.status {
         case TensorArtJobResponse.JobDetails.JobStatus.CREATED:
             return .created
+        case TensorArtJobResponse.JobDetails.JobStatus.PENDING:
+            return .pending
         case TensorArtJobResponse.JobDetails.JobStatus.WAITING:
             return .queued
         case TensorArtJobResponse.JobDetails.JobStatus.RUNNING:
             return .running
         case TensorArtJobResponse.JobDetails.JobStatus.SUCCESS:
             return .complete
+        case TensorArtJobResponse.JobDetails.JobStatus.FAILED:
+            return .failed
         }
     }
 
